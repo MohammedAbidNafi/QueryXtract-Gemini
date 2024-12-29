@@ -1,10 +1,10 @@
 import asyncio
 import fitz
 import numpy as np
-import openai
 import gradio as gr
+import google.generativeai as genai
 from transformers import pipeline
-import os
+
 
 
 def extract_pdf_text(pdf_path: str) -> str:
@@ -71,30 +71,17 @@ async def find_best_chunk(question: str, chunks: list, model) -> dict:
 
 
 
-client = openai.OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
-async def get_answer_from_openai(question: str, best_chunk: str) -> str:
-    """Use OpenAI to generate an answer based on the best chunk."""
-   
 
+genai.configure(api_key="AIzaSyBP2YGcrF73ysV0ydb-LBuOAOt2vhRDhPI")
+
+async def get_answer_from_gemini(question: str, best_chunk: str) -> str:
+    """Use Gemini to generate an answer based on the best chunk."""
     try:
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant that answers questions based on the provided context."
-                },
-                {
-                    "role": "user",
-                    "content": f"Context: {best_chunk}\nQuestion: {question}"
-                }
-            ]
-        )
-        return completion.choices[0].message.content if completion.choices else "No answer found."
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(f"Context: {best_chunk}\nQuestion: {question}")
+        return response.text if response.text else "No answer found."
     except Exception as e:
-        print(f"Error with OpenAI API: {e}")
+        print(f"Error with Gemini API: {e}")
         return "Error occurred while fetching the answer."
 
 # Step 8: Main function to answer the question from the PDF
@@ -103,25 +90,19 @@ async def answer_question_from_pdf(pdf_file, question: str) -> str:
     print("Answering question from PDF...")
     text = extract_pdf_text(pdf_file.name)
 
-    # Step 2: Chunk the text into manageable parts
     chunks = chunk_text(text, 1000)
 
-    # Load model
     model = load_model()
 
-    # Step 3: Find the most relevant chunk based on the question
     result = await find_best_chunk(question, chunks, model)
     best_chunk = result['best_chunk']
     similarity = result['similarity']
 
-    # Step 4: If similarity is too low, return a no-answer response
     if similarity < 0.5:
         return "No relevant information found."
 
-    # Step 5: Use OpenAI to generate an answer based on the best chunk
-    return await get_answer_from_openai(question, best_chunk)
+    return await get_answer_from_gemini(question, best_chunk)
 
-# Gradio interface
 def handle_gradio(pdf_file, question):
     """Handle the Gradio interface for question-answering based on a PDF file."""
     loop = asyncio.new_event_loop()
